@@ -1,0 +1,207 @@
+============================================================
+STAR SCHEMA QUERY PERFORMANCE ANALYSIS
+============================================================
+
+This section evaluates analytical queries executed on the star schema
+and compares their performance with the original OLTP schema.
+
+------------------------------------------------------------
+Q1: Total Encounters by Specialty
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    ds.specialty_name,
+    COUNT(*) AS total_encounters
+FROM fact_encounter f
+JOIN dim_provider dp ON f.provider_key = dp.provider_key
+JOIN dim_specialty ds ON dp.specialty_key = ds.specialty_key
+GROUP BY ds.specialty_name
+ORDER BY total_encounters DESC;
+
+Performance:
+- Execution time: ~5 ms
+
+Improvement:
+- OLTP: ~20–40 ms  
+- STAR: ~5 ms  
+- ~4x–8x faster  
+
+Analysis:
+- Reduced number of joins compared to OLTP
+- Fact table centralizes encounter data
+- Small dimension tables allow efficient joins
+- Aggregation is performed on structured, optimized data
+
+Conclusion:
+The star schema significantly improves performance for aggregation queries
+by reducing join complexity and simplifying query structure.
+
+------------------------------------------------------------
+Q2: Diagnosis–Procedure Pairs
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    dd.icd10_code,
+    dp.cpt_code,
+    COUNT(*) AS frequency
+FROM bridge_encounter_diagnosis bd
+JOIN bridge_encounter_procedure bp 
+    ON bd.encounter_key = bp.encounter_key
+JOIN dim_diagnosis dd 
+    ON bd.diagnosis_key = dd.diagnosis_key
+JOIN dim_procedure dp 
+    ON bp.procedure_key = dp.procedure_key
+GROUP BY dd.icd10_code, dp.cpt_code
+ORDER BY frequency DESC;
+
+Performance:
+- Execution time: ~68 ms
+
+Analysis:
+- Processes ~30,000 rows due to row explosion
+- Bridge tables preserve many-to-many relationships
+- Additional joins increase processing cost
+- Nested loop joins further increase computation cost as row counts grow
+
+Comparison:
+- OLTP: ~16 ms  
+- STAR: ~68 ms (slower)  
+
+Reason:
+- Row explosion remains (multiple diagnoses × procedures)
+- Bridge tables introduce additional joins
+
+Conclusion:
+The star schema does not improve performance for highly combinatorial queries.
+However, it isolates complexity within bridge tables and prevents duplication
+in the fact table.
+
+This demonstrates that schema design cannot eliminate performance issues
+caused by inherent data relationships.
+
+------------------------------------------------------------
+Q3: 30-Day Readmission Rate
+------------------------------------------------------------
+
+-- NOTE: date_key uses integer format, allowing simple arithmetic
+-- for 30-day comparison
+
+SQL Query:
+SELECT 
+    ds.specialty_name,
+    COUNT(*) AS readmissions
+FROM fact_encounter f1
+JOIN fact_encounter f2 
+    ON f1.patient_key = f2.patient_key
+    AND f2.date_key > f1.date_key
+    AND f2.date_key <= f1.date_key + 30
+JOIN dim_provider dp 
+    ON f1.provider_key = dp.provider_key
+JOIN dim_specialty ds 
+    ON dp.specialty_key = ds.specialty_key
+WHERE f1.encounter_type_key = (
+    SELECT encounter_type_key 
+    FROM dim_encounter_type 
+    WHERE encounter_type_name = 'Inpatient'
+)
+GROUP BY ds.specialty_name
+ORDER BY readmissions DESC;
+
+Performance:
+- Execution time: ~3.5 ms
+
+Improvement:
+- OLTP: ~3–8 ms  
+- STAR: ~3.5 ms  
+
+Analysis:
+- Uses integer-based date_key instead of timestamps
+- Simplifies filtering conditions
+- Reduced join complexity compared to OLTP
+
+Limitation:
+- Self-join is still required
+- Computational complexity remains high
+
+Conclusion:
+The star schema provides cleaner logic and slight performance improvement,
+but self-joins remain a limiting factor.
+
+------------------------------------------------------------
+Q4: Revenue by Specialty & Month
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    ds.specialty_name,
+    dd.year,
+    dd.month,
+    SUM(f.total_allowed_amount) AS total_revenue
+FROM fact_encounter f
+JOIN dim_provider dp 
+    ON f.provider_key = dp.provider_key
+JOIN dim_specialty ds 
+    ON dp.specialty_key = ds.specialty_key
+JOIN dim_date dd 
+    ON f.date_key = dd.date_key
+GROUP BY ds.specialty_name, dd.year, dd.month
+ORDER BY total_revenue DESC;
+
+Performance:
+- Execution time: ~7 ms
+
+Improvement:
+- OLTP: ~23–24 ms  
+- STAR: ~7 ms  
+- ~3x faster  
+
+Analysis:
+- Revenue is pre-aggregated in the fact table
+- No need to join the billing table
+- Date dimension replaces DATE_TRUNC
+- Efficient grouping using indexed keys
+
+Conclusion:
+This query demonstrates the strongest benefit of the star schema,
+where pre-aggregation and dimensional design significantly reduce execution time.
+
+------------------------------------------------------------
+OVERALL PERFORMANCE SUMMARY
+------------------------------------------------------------
+
+Key Improvements:
+
+1. Reduced Join Complexity  
+   - OLTP: up to 4–5 joins  
+   - STAR: 2–3 joins  
+
+2. Pre-Aggregation  
+   - Metrics computed during ETL  
+   - Reduces runtime computation  
+
+3. Efficient Time Handling  
+   - Replaced DATE_TRUNC with date dimension  
+   - Improves filtering and grouping  
+
+4. Better Index Utilization  
+   - Query-driven indexing improves performance  
+
+------------------------------------------------------------
+
+Key Trade-Offs:
+
+- Star schema improves most analytical queries  
+- Queries involving many-to-many relationships
+  (e.g., diagnosis–procedure pairs) may not improve  
+
+------------------------------------------------------------
+
+Conclusion:
+
+The star schema significantly improves performance for analytical workloads
+by simplifying query structure, reducing joins, and centralizing measures.
+
+However, performance gains depend on query type, highlighting the importance
+of understanding data relationships and trade-offs in dimensional modeling.

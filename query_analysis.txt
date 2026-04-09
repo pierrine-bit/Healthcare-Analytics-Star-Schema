@@ -1,0 +1,193 @@
+============================================================
+Part 2: QUERY ANALYSIS — Normalized OLTP Schema
+============================================================
+
+This section analyzes the performance of analytical queries executed
+on the normalized OLTP schema. I examined execution plans, join complexity,
+and bottlenecks for each query to understand why the schema is inefficient
+for analytical workloads.
+
+------------------------------------------------------------
+Q1: Total Encounters by Specialty
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    s.specialty_name,
+    COUNT(*) AS total_encounters
+FROM encounters e
+JOIN providers p ON e.provider_id = p.provider_id
+JOIN specialties s ON p.specialty_id = s.specialty_id
+GROUP BY s.specialty_name
+ORDER BY total_encounters DESC;
+
+Schema Analysis:
+Tables involved:
+- encounters
+- providers
+- specialties
+
+Number of joins: 2
+
+Performance:
+- Execution time: ~20–40 ms  
+- Rows processed: ~6000
+
+Bottleneck:
+The query requires joins to retrieve descriptive attributes (specialty),
+and aggregation is performed only after these joins. This increases the
+amount of data processed before grouping.
+
+Conclusion:
+Even relatively simple analytical queries require multiple joins due to
+normalization, increasing both query complexity and execution time.
+
+------------------------------------------------------------
+Q2: Diagnosis–Procedure Pairs
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    d.icd10_code,
+    p.cpt_code,
+    COUNT(*) AS frequency
+FROM encounter_diagnoses ed
+JOIN diagnoses d ON ed.diagnosis_id = d.diagnosis_id
+JOIN encounter_procedures ep ON ed.encounter_id = ep.encounter_id
+JOIN procedures p ON ep.procedure_id = p.procedure_id
+GROUP BY d.icd10_code, p.cpt_code
+ORDER BY frequency DESC;
+
+Schema Analysis:
+Tables involved:
+- encounter_diagnoses
+- diagnoses
+- encounter_procedures
+- procedures
+
+Number of joins: 3
+
+Performance:
+- Execution time: ~16 ms  
+- Rows processed: ~30,000
+
+Bottleneck:
+There is significant row explosion due to many-to-many relationships.
+
+Example:
+- 3 diagnoses × 2 procedures = 6 rows per encounter  
+- 5000 encounters → ~30,000 rows  
+
+As the dataset grows, this multiplication increases rapidly
+(e.g., 5 diagnoses × 4 procedures = 20 rows per encounter).
+
+Conclusion:
+The main issue is not only the number of joins, but the underlying
+data structure. Many-to-many relationships cause row multiplication,
+which significantly increases processing cost.
+
+------------------------------------------------------------
+Q3: 30-Day Readmission Rate
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    s.specialty_name,
+    COUNT(*) AS readmissions
+FROM encounters e1
+JOIN encounters e2 
+    ON e1.patient_id = e2.patient_id
+    AND e2.encounter_date > e1.discharge_date
+    AND e2.encounter_date <= e1.discharge_date + INTERVAL '30 days'
+JOIN providers p ON e1.provider_id = p.provider_id
+JOIN specialties s ON p.specialty_id = s.specialty_id
+WHERE e1.encounter_type = 'Inpatient'
+GROUP BY s.specialty_name
+ORDER BY readmissions DESC;
+
+Schema Analysis:
+Tables involved:
+- encounters (self-join)
+- providers
+- specialties
+
+Number of joins: 3 (including self-join)
+
+Performance:
+- Execution time: ~3–8 ms  
+- Rows processed: ~6000
+
+Bottleneck:
+The query performs a self-join on the encounters table combined with
+time-based filtering. Each encounter is compared with other encounters
+of the same patient, increasing computational complexity.
+
+Optimization Insight:
+An alternative approach is to use window functions such as LAG()
+to compare consecutive encounters per patient. This can reduce
+join complexity and improve scalability for larger datasets.
+
+Conclusion:
+Self-joins introduce significant complexity, especially when combined
+with temporal conditions, making the query less efficient as data grows.
+
+------------------------------------------------------------
+Q4: Revenue by Specialty & Month
+------------------------------------------------------------
+
+SQL Query:
+SELECT 
+    s.specialty_name,
+    DATE_TRUNC('month', e.encounter_date) AS month,
+    SUM(b.allowed_amount) AS total_revenue
+FROM billing b
+JOIN encounters e ON b.encounter_id = e.encounter_id
+JOIN providers p ON e.provider_id = p.provider_id
+JOIN specialties s ON p.specialty_id = s.specialty_id
+GROUP BY s.specialty_name, month
+ORDER BY total_revenue DESC;
+
+Schema Analysis:
+Tables involved:
+- billing
+- encounters
+- providers
+- specialties
+
+Number of joins: 3
+
+Performance:
+- Execution time: ~23–24 ms  
+- Rows processed: ~5000–6000
+
+Bottleneck:
+Multiple joins are required to combine financial, temporal, and
+categorical data. Aggregation is performed after all joins, increasing
+processing cost.
+
+Additionally, the use of DATE_TRUNC prevents efficient index usage,
+further slowing down query execution.
+
+Conclusion:
+This query clearly highlights the limitations of the OLTP schema for
+analytical workloads, where runtime transformations and join-heavy
+logic reduce performance.
+
+------------------------------------------------------------
+OVERALL ANALYSIS
+------------------------------------------------------------
+
+From all four queries, I observed:
+
+1. Join complexity increases execution time  
+2. Many-to-many relationships cause row explosion  
+3. Runtime computations add overhead  
+4. Aggregations after joins are expensive  
+
+Final Conclusion:
+The OLTP schema is optimized for transactional operations but not for
+analytical queries. The combination of multiple joins, row explosion,
+and runtime computations makes it inefficient for reporting.
+
+This motivates the need for a star schema, which simplifies query
+structure, reduces joins, and improves performance.

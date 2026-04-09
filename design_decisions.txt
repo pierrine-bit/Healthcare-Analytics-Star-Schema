@@ -1,0 +1,128 @@
+============================================================
+STAR SCHEMA DESIGN DECISIONS
+============================================================
+
+------------------------------------------------------------
+Decision 1: Fact Table Grain
+------------------------------------------------------------
+
+I selected the encounter as the grain of the fact table because all
+core analytical queries in this project (revenue, readmissions,
+and encounter counts) are centered around individual encounters.
+
+This grain provides:
+- Simple and consistent aggregation
+- Direct linkage to patient, provider, and time dimensions
+- Controlled integration with diagnoses and procedures via bridge tables
+
+Choosing a finer grain (e.g., diagnosis-level or procedure-level)
+would introduce duplication and significantly increase query complexity
+due to many-to-many relationships.
+
+
+------------------------------------------------------------
+Decision 2: Dimension Tables
+------------------------------------------------------------
+
+I created dimension tables for:
+- Patient
+- Provider
+- Specialty
+- Department
+- Date
+- Encounter Type
+- Diagnosis
+- Procedure
+
+These dimensions store descriptive attributes used for filtering,
+grouping, and reporting, reducing the need for repeated joins
+to transactional tables.
+
+The date dimension includes precomputed attributes such as:
+- Year, Month, Quarter
+- Week number
+- Day of week
+- Weekend indicator
+
+This eliminates runtime functions like DATE_TRUNC, improving
+query performance and enabling better index utilization.
+
+Additionally, the provider dimension is designed to support
+Slowly Changing Dimension (SCD Type 2), allowing historical
+tracking of provider attributes such as specialty and department.
+
+
+------------------------------------------------------------
+Decision 3: Pre-Aggregated Metrics
+------------------------------------------------------------
+
+I included pre-aggregated measures in the fact table:
+- total_allowed_amount
+- diagnosis_count
+- procedure_count
+
+In the OLTP schema, these metrics required multiple joins and
+aggregations at query time, increasing execution cost.
+
+By precomputing these values during ETL:
+- Queries become faster and simpler
+- Repeated computations are avoided
+- Consistent metrics are ensured across reports
+
+For example:
+- Revenue queries no longer require joining the billing table
+- Counts of diagnoses and procedures are directly available
+
+
+------------------------------------------------------------
+Decision 4: Bridge Tables
+------------------------------------------------------------
+
+I introduced bridge tables to handle many-to-many relationships between:
+- Encounters and Diagnoses
+- Encounters and Procedures
+
+This design:
+- Preserves relationships without duplicating fact records
+- Prevents row explosion at the fact table level
+- Enables flexible analysis of diagnoses and procedures
+
+Without bridge tables, storing multiple diagnoses or procedures
+directly in the fact table would significantly increase data volume
+and degrade performance.
+
+
+------------------------------------------------------------
+Indexing Strategy (Query-Driven)
+------------------------------------------------------------
+
+Indexes were designed based on the most frequent analytical query patterns:
+
+- date_key index  
+  Supports time-based filtering for revenue and trend analysis
+
+- provider_key index  
+  Supports grouping and filtering by provider and specialty
+
+- composite index (date_key, provider_key)  
+  Optimizes queries combining time and provider dimensions
+  (e.g., revenue by specialty per month)
+
+- bridge table indexes  
+  Improve join performance when resolving many-to-many relationships
+
+This query-driven indexing approach ensures that indexes directly support
+analytical workloads rather than being applied generically.
+
+
+------------------------------------------------------------
+Conclusion
+------------------------------------------------------------
+
+The star schema design directly addresses the performance limitations
+identified in the OLTP schema by reducing join complexity,
+pre-aggregating key metrics, and efficiently handling many-to-many
+relationships.
+
+The resulting model supports all required analytical queries while
+remaining scalable, efficient, and easy to understand.

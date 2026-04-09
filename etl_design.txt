@@ -1,0 +1,220 @@
+============================================================
+ETL DESIGN: OLTP TO STAR SCHEMA
+============================================================
+
+The ETL pipeline transforms normalized OLTP data into a star schema
+optimized for analytical queries. The process follows a structured approach:
+dimension tables are loaded first, followed by the fact table, and finally
+bridge tables to handle many-to-many relationships.
+
+This design ensures data consistency, improves query performance, and
+supports efficient analytical workloads.
+
+------------------------------------------------------------
+1. EXTRACTION STRATEGY
+------------------------------------------------------------
+
+Data is extracted directly from OLTP tables using SQL queries in PostgreSQL.
+
+Source tables:
+- patients
+- providers
+- specialties
+- departments
+- encounters
+- diagnoses
+- encounter_diagnoses
+- procedures
+- encounter_procedures
+- billing
+
+For this project, a full load approach is used due to the small dataset size.
+
+In a production environment, incremental extraction would be implemented
+using timestamps or Change Data Capture (CDC) to reduce data movement
+and improve efficiency.
+
+------------------------------------------------------------
+2. TRANSFORMATION LOGIC
+------------------------------------------------------------
+
+2.1 Dimension Transformation
+
+Dimension tables are created by denormalizing attributes from the OLTP schema
+and assigning surrogate keys.
+
+Key transformations:
+
+- Patient dimension:
+  Derives age_group from date_of_birth to support demographic analysis.
+
+- Date dimension:
+  Generated using generate_series() with attributes such as year, month,
+  quarter, week, and weekend indicator. This eliminates runtime date
+  calculations and improves query performance.
+
+- Provider dimension:
+  Joined with specialty and department and structured to support
+  Slowly Changing Dimension (SCD Type 2).
+
+------------------------------------------------------------
+
+2.2 Fact Table Transformation
+
+The fact table is defined at the encounter level (one row per encounter).
+
+During transformation:
+- Encounters are joined with dimension tables using business keys
+- total_allowed_amount is aggregated from billing
+- diagnosis_count and procedure_count are computed using COUNT DISTINCT
+- encounter_date is converted to date_key for efficient joins
+
+This design ensures that most analytical queries can be answered
+directly from the fact table without additional joins.
+
+------------------------------------------------------------
+
+2.3 Bridge Table Transformation
+
+Bridge tables are used to handle many-to-many relationships:
+
+- encounter ↔ diagnoses
+- encounter ↔ procedures
+
+Mappings:
+- encounter_id → encounter_key
+- diagnosis_id → diagnosis_key
+- procedure_id → procedure_key
+
+This approach preserves relationships while preventing duplication
+in the fact table.
+
+------------------------------------------------------------
+3. LOADING STRATEGY
+------------------------------------------------------------
+
+The loading order ensures referential integrity:
+
+1. dim_date  
+2. dim_specialty  
+3. dim_department  
+4. dim_patient  
+5. dim_provider  
+6. dim_encounter_type  
+7. dim_diagnosis  
+8. dim_procedure  
+9. fact_encounter  
+10. bridge tables  
+
+Dimensions are loaded first to ensure surrogate keys are available
+before loading fact and bridge tables.
+
+------------------------------------------------------------
+4. SLOWLY CHANGING DIMENSIONS (SCD)
+------------------------------------------------------------
+
+The provider dimension supports SCD Type 2 using:
+
+- effective_date  
+- end_date  
+- is_current  
+
+In a production environment, SCD Type 2 updates would be implemented
+using MERGE or UPSERT logic. When a provider’s attributes change
+(e.g., specialty or department), the existing record would be marked
+as inactive (end_date set, is_current = FALSE), and a new record
+would be inserted with updated values (is_current = TRUE).
+
+Although the dataset is static, the schema is designed to support
+future historical tracking.
+
+------------------------------------------------------------
+5. HANDLING LATE-ARRIVING DATA
+------------------------------------------------------------
+
+To handle late-arriving data:
+
+- Dimension tables are loaded before fact data  
+- LEFT JOIN is used during fact loading where necessary  
+- Default or “unknown” keys can be used if dimension records are missing  
+
+This ensures robustness when data is incomplete or delayed.
+
+------------------------------------------------------------
+6. DATA QUALITY CONTROLS
+------------------------------------------------------------
+
+Data quality is maintained using:
+
+- Foreign key constraints for referential integrity  
+- COALESCE to handle missing billing values  
+- COUNT DISTINCT to prevent duplication  
+
+Validation checks include:
+- Comparing fact table row count with encounters  
+- Verifying bridge table sizes match expected relationships  
+
+Additional checks include:
+- Ensuring no negative financial values  
+- Verifying foreign keys are not NULL  
+- Detecting duplicate encounter records  
+
+These checks ensure that invalid data does not propagate into the
+analytical layer.
+
+------------------------------------------------------------
+7. PERFORMANCE OPTIMIZATION
+------------------------------------------------------------
+
+Key optimizations implemented:
+
+1. Pre-aggregation  
+   - Metrics are computed during ETL  
+   - Reduces query-time computation  
+
+2. Indexing  
+   - Indexes on date_key and provider_key  
+   - Indexes on bridge tables for faster joins  
+
+3. Data simplification  
+   - Fact table stores only analytical attributes  
+   - Reduces processing overhead  
+
+------------------------------------------------------------
+8. REFRESH STRATEGY
+------------------------------------------------------------
+
+For this project:
+- Full reload using TRUNCATE and INSERT  
+
+In production:
+- Incremental loading  
+- Partitioning (e.g., by date)  
+- Scheduled ETL jobs  
+
+------------------------------------------------------------
+9. IDEMPOTENT ETL DESIGN
+------------------------------------------------------------
+
+To ensure safe re-execution:
+
+- TRUNCATE is used before loading  
+- ON CONFLICT DO NOTHING is used for dim_date  
+
+This prevents duplicate records and ensures consistent results
+across multiple runs.
+
+------------------------------------------------------------
+CONCLUSION
+------------------------------------------------------------
+
+The ETL pipeline successfully transforms transactional data into a
+star schema optimized for analytical queries.
+
+It improves performance by:
+- Reducing join complexity  
+- Pre-aggregating key metrics  
+- Structuring data for efficient analysis  
+
+This design reflects real-world data engineering practices and
+supports scalable healthcare analytics.
