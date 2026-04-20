@@ -7,28 +7,11 @@ STAR SCHEMA DESIGN DECISIONS
 Star Schema Overview
 ------------------------------------------------------------
 
-The diagram below illustrates the structure of the star schema,
-with a central fact table connected to dimension tables
-and bridge tables for handling complex many-to-many relationships.
+The star schema consists of a central fact table (fact_encounter)
+connected to multiple dimension tables, with bridge tables used
+to handle many-to-many relationships.
 
-
-
-                    dim_patient
-                         |
-                         |
-dim_date —— fact_encounter —— dim_provider —— dim_specialty
-                         |
-                         |
-               dim_encounter_type
-                         |
-                         |
-        -------------------------------
-        |                             |
-bridge_encounter_diagnosis   bridge_encounter_procedure
-        |                             |
-   dim_diagnosis               dim_procedure
-
-
+The full diagram is available in the README.md
 
 ------------------------------------------------------------
 Decision 1: Fact Table Grain
@@ -36,7 +19,7 @@ Decision 1: Fact Table Grain
 
 I selected the encounter as the grain of the fact table because all
 core analytical queries in this project (revenue, readmissions,
-and encounter counts) are centered around individual encounters.
+and encounter counts) They are centered around individual encounters.
 
 This grain provides:
 - Simple and consistent aggregation
@@ -116,7 +99,7 @@ This design:
 - Enables flexible analysis of diagnoses and procedures
 
 Without bridge tables, storing multiple diagnoses or procedures
-directly in the fact table would significantly increase data volume
+Directly in the fact table would significantly increase data volume
 and degrade performance.
 
 
@@ -149,7 +132,7 @@ Conclusion
 
 The star schema design directly addresses the performance limitations
 identified in the OLTP schema by reducing join complexity,
-pre-aggregating key metrics, and efficiently handling many-to-many
+pre-aggregating key metrics and efficiently handling many-to-many
 relationships.
 
 The resulting model supports all required analytical queries while
