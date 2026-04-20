@@ -1,6 +1,34 @@
+
 ============================================================
 STAR SCHEMA DESIGN DECISIONS
 ============================================================
+
+------------------------------------------------------------
+Star Schema Overview
+------------------------------------------------------------
+
+The diagram below illustrates the structure of the star schema,
+with a central fact table connected to dimension tables
+and bridge tables for handling complex many-to-many relationships.
+
+
+
+                    dim_patient
+                         |
+                         |
+dim_date —— fact_encounter —— dim_provider —— dim_specialty
+                         |
+                         |
+               dim_encounter_type
+                         |
+                         |
+        -------------------------------
+        |                             |
+bridge_encounter_diagnosis   bridge_encounter_procedure
+        |                             |
+   dim_diagnosis               dim_procedure
+
+
 
 ------------------------------------------------------------
 Decision 1: Fact Table Grain
