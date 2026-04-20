@@ -10,11 +10,17 @@ In this project, I transformed a normalized healthcare database (OLTP) into a st
 The main objective of this project was to analyze the performance limitations of a normalized OLTP schema and identify bottlenecks in analytical queries. Based on this analysis, I designed a star schema using the Kimball dimensional modeling approach and implemented an ETL pipeline to transform the data. Finally, I evaluated the performance improvements between the OLTP system and the new star schema.
 
 
+
 ## OLTP Schema 
+
+![OLTP ERD](oltp_erd.png)
 
 The original database is fully normalized (3NF) and includes tables such as patients, providers, specialties, departments, encounters, diagnoses, procedures, encounter_diagnoses, encounter_procedures, and billing. While this design ensures high data integrity and reduces redundancy, it introduces performance challenges for analytical queries due to multiple joins and runtime computations.
 
+
 ## Star Schema Design 
+
+![Star Schema ERD](olap_star_schema.png)
 
 The redesigned system follows a star schema centered around the **fact_encounter** table, which is defined at the grain of one row per encounter. This table stores key measures such as total_allowed_amount, diagnosis_count, and procedure_count, allowing efficient aggregation for reporting.
 
@@ -22,13 +28,13 @@ The schema includes several dimension tables, including dim_patient, dim_provide
 
 To handle many-to-many relationships, bridge tables (bridge_encounter_diagnosis and bridge_encounter_procedure) are used. This design prevents duplication in the fact table while preserving the relationships between encounters, diagnoses, and procedures.
 
+
 ## ETL Pipeline
 
 The ETL pipeline was implemented in a structured manner, where dimension tables are loaded first, followed by the fact table and then the bridge tables. During transformation, key metrics such as total revenue and counts of diagnoses and procedures are pre-aggregated to improve query performance. The pipeline uses surrogate keys for all dimensions, enforces referential integrity, and is designed to be idempotent, allowing safe re-execution without creating duplicates.
 
-## Performance Summary
 
-The following table summarizes the performance comparison between OLTP and star schema queries based on execution plans.
+## Performance Summary
 
 | Query | OLTP | Star Schema | Improvement |
 |------|------|------------|------------|
@@ -36,6 +42,8 @@ The following table summarizes the performance comparison between OLTP and star 
 | Diagnosis–Procedure Pairs | ~16 ms | ~68 ms | Slower (row explosion) |
 | Readmission Rate | ~3–8 ms | ~3.5 ms | Slight improvement |
 | Revenue by Month | ~24 ms | ~7 ms | ~3x faster |
+
+
 
 ## Key Insights
 
@@ -46,9 +54,11 @@ From this analysis, I observed that the star schema significantly improves perfo
 
 The project highlights the trade-offs between normalized and denormalized designs. The OLTP schema provides high data integrity, minimal redundancy, and efficient transaction processing, but results in complex and slower analytical queries. In contrast, the star schema simplifies query structure and improves performance for analytics, at the cost of some data redundancy and the need for ETL processes to maintain consistency.
 
+
+
 ## Technologies Used
 
-This project was implemented using PostgreSQL and SQL (DDL, DML, and ETL operations), with pgAdmin used for query execution and analysis. The design follows the Kimball dimensional modeling methodology.
+This project was implemented using PostgreSQL and SQL (DDL, DML, and ETL operations), with pgAdmin used for query execution and analysis. ERD diagrams were designed using dbdiagram.io to visualize both the OLTP and OLAP schemas. The design follows the Kimball dimensional modeling methodology.
 
 ## Project Structure
 
@@ -63,6 +73,8 @@ Healthcare-Analytics-Star-Schema/
 ├── etl_design.txt
 ├── reflection.md
 ├── final_star_schema_etl.sql
+├── oltp_erd.png
+├── olap_star_schema.png
 └── README.md
 
 ```
@@ -76,4 +88,3 @@ In this project, I successfully designed a star schema aligned with analytical r
 ## Conclusion
 
 This project demonstrates how transforming an OLTP database into a star schema improves analytical performance while highlighting important trade-offs. It reflects practical data engineering concepts and provides insight into how real-world healthcare analytics systems are designed and optimized.
-
